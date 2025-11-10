@@ -1,0 +1,116 @@
+from collections import deque
+import taichi as ti
+import taichi.math as tm
+from taichi import sin, cos, sqrt, exp
+ti.reset()
+ti.init(arch = ti.gpu, fast_math=True)
+
+
+# Some tweaking is in order
+dim     = (1000,800)
+upscale = 8
+dimH    = (int(upscale*dim[0]),int(upscale*dim[1]))
+g       = 1e-1
+h       = 1e-1
+e       = 1e-3
+dx      = (2.5*tm.pi/dimH[1], 2.5*tm.pi/dimH[1]) # (1e-2,1e-2)
+
+# Taichi arrays that will store our vectors
+vec     = tm.vec4
+a       = ti.Vector.field(4, ti.f32, dimH)
+b       = ti.Vector.field(4, ti.f32, dimH)
+pixels  = ti.Vector.field(3, ti.f32, dimH)
+pixelsL = ti.Vector.field(3, ti.f32, dim)
+window  = ti.ui.Window("Double Pendulum", res=dim, fps_limit=60)
+gui     = window.get_canvas()
+
+
+# Derivative function
+@ti.func
+def f(a:vec) -> vec:
+    # Precalculate some sines ans cosines so that we don't do it twice
+    sx  = sin(a[0])
+    sy  = sin(a[1])
+    sxy = sin(a[0] - a[1])
+    cxy = cos(a[0] - a[1])
+
+    # Return the vector b = f(a)
+    return  vec(a[2], 
+                a[3], 
+                (-g*(sx + sy*cxy) - a[3]**2 * sxy * (1 + cxy) + g * sy * cxy)/(1+sxy**2), 
+                (a[2]**2 * sxy + g * sx * cxy - g * sy + a[3]**2 * sxy * cxy)/(1+sxy**2)) 
+
+# Simple RK4 solver
+@ti.func
+def step(a:vec, h:ti.f32) -> vec:
+    k1 = f(a)
+    k2 = f(a + (h/2)*k1)
+    k3 = f(a + (h/2)*k2)
+    k4 = f(a + h*k3)
+    
+    return a + (k1 + 2*k2 + 2*k3 + k4)*(h/6)
+
+
+# Intialization
+@ti.kernel
+def initialize(dx:float, dy:float, e:float, dimX:int, dimY:int):
+    a.fill(0)
+    b.fill(0)
+    for i,j in a:
+        a[i,j][0] = (i-dimX//2            )*dx
+        a[i,j][1] = (j-dimY//2            )*dy
+        b[i,j][0] = (i-dimX//2 + e/sqrt(2))*dx 
+        b[i,j][1] = (j-dimY//2 + e/sqrt(2))*dy
+
+@ti.func
+def sigmoid(x:float, k:float):
+    return (2/(1+exp(-x/k)) - 1)*7
+
+# Draw the next frame
+@ti.kernel
+def draw(h:float, norm:float, k:float):
+    alpha = 0.1
+    for i,j in pixels:
+        a[i,j] = step(a[i,j], h)
+        b[i,j] = step(b[i,j], h)
+
+        c = sigmoid((a[i,j][:2] - b[i,j][:2]).norm()/norm, k) # type: ignore
+        pixels[i,j] = tm.vec3([c,2*c,5*c])/(7)
+   
+
+# Implement some antialiasing
+@ti.kernel
+def downsample():
+    for i, j in pixelsL:
+        acc = tm.vec3(0.0)
+        for di, dj in ti.ndrange(upscale, upscale):
+            acc += pixels[i * upscale + di, j * upscale + dj]
+        pixelsL[i, j] = acc / (upscale * upscale)
+
+
+initialize(*dx,e,*dimH)
+
+dmax    = 10
+dmin    = 0.1
+k       = 0.5
+kC      = 0.005
+norm    = e*h
+
+while window.running:
+    if window.is_pressed(ti.GUI.ESCAPE): 
+        ti.sync()
+        window.destroy()
+        break
+
+    if window.is_pressed(ti.GUI.UP):
+            if k>kC: k -= kC
+
+    if window.is_pressed(ti.GUI.DOWN):
+        if k<1-kC: k += kC
+
+    draw(h, norm, dmin*(dmax/dmin)**k)
+    downsample()
+            
+    gui.set_image(pixelsL)
+
+    window.show()
