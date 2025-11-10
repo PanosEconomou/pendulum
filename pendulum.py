@@ -1,7 +1,7 @@
 from collections import deque
 import taichi as ti
 import taichi.math as tm
-from taichi import sin, cos, sqrt, exp
+from taichi import sin, cos, sqrt, exp, log
 ti.reset()
 ti.init(arch = ti.gpu, fast_math=True)
 
@@ -10,7 +10,7 @@ ti.init(arch = ti.gpu, fast_math=True)
 dim     = (1000,800)
 upscale = 8
 dimH    = (int(upscale*dim[0]),int(upscale*dim[1]))
-g       = 1e-1
+g       = 1
 h       = 1e-1
 e       = 1e-3
 dx      = (2.5*tm.pi/dimH[1], 2.5*tm.pi/dimH[1]) # (1e-2,1e-2)
@@ -22,23 +22,21 @@ b       = ti.Vector.field(4, ti.f32, dimH)
 pixels  = ti.Vector.field(3, ti.f32, dimH)
 pixelsL = ti.Vector.field(3, ti.f32, dim)
 window  = ti.ui.Window("Double Pendulum", res=dim, fps_limit=60)
-gui     = window.get_canvas()
-
+canvas  = window.get_canvas()
 
 # Derivative function
 @ti.func
 def f(a:vec) -> vec:
     # Precalculate some sines ans cosines so that we don't do it twice
-    sx  = sin(a[0])
-    sy  = sin(a[1])
-    sxy = sin(a[0] - a[1])
-    cxy = cos(a[0] - a[1])
+    sxy     = sin(  a[0] -   a[1])
+    s2x2y   = sin(2*a[0] - 2*a[1])
+    c2x2y   = cos(2*a[0] - 2*a[1]) - 3
 
     # Return the vector b = f(a)
-    return  vec(a[2], 
-                a[3], 
-                (-g*(sx + sy*cxy) - a[3]**2 * sxy * (1 + cxy) + g * sy * cxy)/(1+sxy**2), 
-                (a[2]**2 * sxy + g * sx * cxy - g * sy + a[3]**2 * sxy * cxy)/(1+sxy**2)) 
+    return  vec(a[2], \
+                a[3], \
+                (3 * g * sin(a[0]) +   g*sin(a[0] - 2*a[1]) + a[2]*a[2]*s2x2y + 2*a[3]*a[3]*sxy)/c2x2y, \
+                (2 * g * sin(a[1]) - 2*g*sin(2*a[0] - a[1]) - a[3]*a[3]*s2x2y - 2*a[2]*a[2]*sxy)/c2x2y) 
 
 # Simple RK4 solver
 @ti.func
@@ -90,10 +88,10 @@ def downsample():
 
 initialize(*dx,e,*dimH)
 
-dmax    = 10
-dmin    = 0.1
+kmax    = 50
+kmin    = 0.1
 k       = 0.5
-kC      = 0.005
+kC      = 0.01
 norm    = e*h
 
 while window.running:
@@ -106,11 +104,11 @@ while window.running:
             if k>kC: k -= kC
 
     if window.is_pressed(ti.GUI.DOWN):
-        if k<1-kC: k += kC
+        if k<kmax-kC: k += kC
 
-    draw(h, norm, dmin*(dmax/dmin)**k)
+    draw(h, norm, kmin*(kmax/kmin)**k)
     downsample()
             
-    gui.set_image(pixelsL)
+    canvas.set_image(pixelsL)
 
     window.show()
