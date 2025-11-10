@@ -85,30 +85,30 @@ def downsample():
             acc += pixels[i * upscale + di, j * upscale + dj]
         pixelsL[i, j] = acc / (upscale * upscale)
 
+if __name__ == '__main__':
+    initialize(*dx,e,*dimH)
 
-initialize(*dx,e,*dimH)
+    kmax    = 50
+    kmin    = 0.1
+    k       = 0.5
+    kC      = 0.01
+    norm    = e*h
 
-kmax    = 50
-kmin    = 0.1
-k       = 0.5
-kC      = 0.01
-norm    = e*h
+    while window.running:
+        if window.is_pressed(ti.GUI.ESCAPE): 
+            ti.sync()
+            window.destroy()
+            break
 
-while window.running:
-    if window.is_pressed(ti.GUI.ESCAPE): 
-        ti.sync()
-        window.destroy()
-        break
+        if window.is_pressed(ti.GUI.UP):
+                if k>kC: k -= kC
 
-    if window.is_pressed(ti.GUI.UP):
-            if k>kC: k -= kC
+        if window.is_pressed(ti.GUI.DOWN):
+            if k<kmax-kC: k += kC
 
-    if window.is_pressed(ti.GUI.DOWN):
-        if k<kmax-kC: k += kC
+        draw(h, norm, kmin*(kmax/kmin)**k)
+        downsample()
+                
+        canvas.set_image(pixelsL)
 
-    draw(h, norm, kmin*(kmax/kmin)**k)
-    downsample()
-            
-    canvas.set_image(pixelsL)
-
-    window.show()
+        window.show()
