@@ -11,7 +11,7 @@ dim     = (1000,800)
 upscale = 8
 dimH    = (int(upscale*dim[0]),int(upscale*dim[1]))
 g       = 1
-h       = 1e-1
+h       = 5e-2
 e       = 1e-3
 dx      = (2.5*tm.pi/dimH[1], 2.5*tm.pi/dimH[1]) # (1e-2,1e-2)
 
@@ -66,14 +66,17 @@ def sigmoid(x:float, k:float):
 
 # Draw the next frame
 @ti.kernel
-def draw(h:float, norm:float, k:float):
-    alpha = 0.1
+def draw(h:float, norm:float, k:float, colored:bool):
     for i,j in pixels:
         a[i,j] = step(a[i,j], h)
         b[i,j] = step(b[i,j], h)
 
-        c = sigmoid((a[i,j][:2] - b[i,j][:2]).norm()/norm, k) # type: ignore
-        pixels[i,j] = tm.vec3([c,2*c,5*c])/(7)
+        if colored:
+
+            pixels[i,j] =  0.5 + 0.5 * ti.Vector([sin(a[i,j][0]/(2*tm.pi)*3.1), ti.sin(a[i,j][1]/(2*tm.pi)*3.1 + 2.1), ti.sin(a[i,j][0]/(2*tm.pi)*1.7 + a[i,j][1]/(2*tm.pi)*2.3)])
+        else:
+            c = sigmoid((a[i,j][:2] - b[i,j][:2]).norm()/norm, k) # type: ignore
+            pixels[i,j] = tm.vec3([c,2*c,5*c])/(7)
    
 
 # Implement some antialiasing
@@ -93,6 +96,13 @@ if __name__ == '__main__':
     k       = 0.5
     kC      = 0.01
     norm    = e*h
+    i       = 0
+    every   = 1
+    color   = False
+    paused  = False
+    held_S  = False
+    held_R  = False
+    held_P  = False
 
     while window.running:
         if window.is_pressed(ti.GUI.ESCAPE): 
@@ -106,8 +116,28 @@ if __name__ == '__main__':
         if window.is_pressed(ti.GUI.DOWN):
             if k<kmax-kC: k += kC
 
-        draw(h, norm, kmin*(kmax/kmin)**k)
-        downsample()
+        if held_S and not window.is_pressed(ti.GUI.SPACE):
+            held_S  = False
+            color   = not color
+        held_S = window.is_pressed(ti.GUI.SPACE)
+
+        if held_R and not window.is_pressed('r'):
+            held_R  = False
+            initialize(*dx,e,*dimH)
+        held_R = window.is_pressed('r')
+
+        if held_P and not window.is_pressed('p'):
+            held_P  = False
+            paused  = not paused
+        held_P = window.is_pressed('p')
+        
+        if not paused:
+            draw(h, norm, kmin*(kmax/kmin)**k, color)
+            if i == 0:
+                downsample()
+                i = 1
+            
+            i = (i+1)%every
                 
         canvas.set_image(pixelsL)
 
