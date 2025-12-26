@@ -135,7 +135,6 @@ if __name__ == '__main__':
             draw(h, norm, kmin*(kmax/kmin)**k, color)
             if i == 0:
                 downsample()
-                i = 1
             
             i = (i+1)%every
                 
